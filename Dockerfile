@@ -1,4 +1,4 @@
-FROM rust:1 AS build
+FROM rust:1-bookworm AS build
 
 WORKDIR /app
 
@@ -20,27 +20,27 @@ RUN sed -i 's/rand::thread_rng().gen::<u16>() as u64/rand::thread_rng().gen_rang
 RUN CARGO_NET_GIT_FETCH_WITH_CLI=true cargo build --release && \
     mkdir -p /app/microbin_data
 
-# https://github.com/GoogleContainerTools/distroless
-# nonroot user (uid:gid 65532:65532) is pre-defined in distroless images
-FROM gcr.io/distroless/cc-debian12
+# Runtime: same Debian release as the build stage (glibc match), plus liblzma5 which the
+# binary links against and which the distroless base lacks.
+FROM debian:bookworm-slim
+
+RUN DEBIAN_FRONTEND=noninteractive \
+    apt-get update && \
+    apt-get -y install --no-install-recommends ca-certificates tzdata liblzma5 libssl3 && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-# copy time zone info from build stage
-COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
-
-# copy CA certificates from build stage
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # copy built executable
 COPY --from=build /app/target/release/microbin /usr/bin/microbin
 
 # copy data directory skeleton with nonroot ownership
+RUN useradd --uid 65532 --user-group --no-create-home --shell /usr/sbin/nologin nonroot || true
 COPY --from=build --chown=65532:65532 /app/microbin_data /app/microbin_data
 
 USER 65532:65532
 
-# Data lives on the Railway volume mounted at MICROBIN_DATA_DIR (no VOLUME instruction: Railway rejects it)
+# Data lives on a Railway volume mounted at MICROBIN_DATA_DIR (VOLUME is not supported by Railway).
 
 # Expose webport used for the webserver to the docker runtime
 EXPOSE 8080
