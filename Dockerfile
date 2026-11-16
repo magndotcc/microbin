@@ -9,6 +9,14 @@ RUN DEBIAN_FRONTEND=noninteractive \
 
 COPY . .
 
+# Infra patch: upstream picks paste IDs as random u16 with no uniqueness check, so a
+# collision panics inside the SQLite insert and poisons the shared lock (every later
+# upload then 502s). Use a wide random ID and let the lock survive a panic.
+RUN sed -i 's/rand::thread_rng().gen::<u16>() as u64/rand::thread_rng().gen_range(1..=9_007_199_254_740_991u64)/' src/endpoints/create.rs && \
+    grep -q 'gen_range(1..=9_007_199_254_740_991u64)' src/endpoints/create.rs && \
+    find src -name '*.rs' -exec sed -i 's/\.lock()\.unwrap()/.lock().unwrap_or_else(|e| e.into_inner())/g' {} + && \
+    grep -rq 'unwrap_or_else(|e| e.into_inner())' src
+
 RUN CARGO_NET_GIT_FETCH_WITH_CLI=true cargo build --release && \
     mkdir -p /app/microbin_data
 
