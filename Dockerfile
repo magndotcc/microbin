@@ -40,7 +40,7 @@ COPY --from=build --chown=65532:65532 /app/microbin_data /app/microbin_data
 
 USER 65532:65532
 
-VOLUME ["/app/microbin_data"]
+# Data lives on the Railway volume mounted at MICROBIN_DATA_DIR (no VOLUME instruction: Railway rejects it)
 
 # Expose webport used for the webserver to the docker runtime
 EXPOSE 8080
