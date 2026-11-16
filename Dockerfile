@@ -34,15 +34,19 @@ WORKDIR /app
 # copy built executable
 COPY --from=build /app/target/release/microbin /usr/bin/microbin
 
-# copy data directory skeleton with nonroot ownership
-RUN useradd --uid 65532 --user-group --no-create-home --shell /usr/sbin/nologin nonroot || true
-COPY --from=build --chown=65532:65532 /app/microbin_data /app/microbin_data
+# copy data directory skeleton
+COPY --from=build /app/microbin_data /app/microbin_data
 
-USER 65532:65532
+# Entrypoint runs as root only long enough to make the Railway volume writable for uid 65532,
+# then drops privileges and execs microbin.
+RUN printf '%s\n' '#!/bin/sh' \
+    'chown -R 65532:65532 /data /app/microbin_data 2>/dev/null' \
+    'exec setpriv --reuid=65532 --regid=65532 --clear-groups /usr/bin/microbin "$@"' \
+    > /usr/local/bin/entrypoint.sh && chmod 755 /usr/local/bin/entrypoint.sh
 
 # Data lives on a Railway volume mounted at MICROBIN_DATA_DIR (VOLUME is not supported by Railway).
 
 # Expose webport used for the webserver to the docker runtime
 EXPOSE 8080
 
-ENTRYPOINT ["/usr/bin/microbin"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
